@@ -1,0 +1,8 @@
+name: Publish Document
+title:
+account: rpubs
+server: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/204259/5f48f05f54874ee7a4629ea588e390d7
+bundleId: https://api.rpubs.com/api/v1/document/204259/5f48f05f54874ee7a4629ea588e390d7
+url: http://rpubs.com/gohwils/204259
+when: 1496130094.40305

@@ -1,0 +1,14 @@
+Package: NetProt
+Type: Package
+Title: A Suite of Methods for Network-Based Proteomics
+Version: 0.1
+Date: 2016-08-25
+Author: Wilson Wen Bin Goh
+Maintainer: Wilson Wen Bin Goh <goh.informatics@gmail.com>
+Description: NetProt is an R package containing several methods for performing network-based analysis with proteomics data.
+License: GPL
+LazyData: TRUE
+RoxygenNote: 6.0.1
+Suggests: knitr,
+    rmarkdown, pheatmap, limma, pheatmap, genefilter, e1071, vioplot
+VignetteBuilder: knitr

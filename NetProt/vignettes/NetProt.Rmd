@@ -1,0 +1,229 @@
+---
+title: "NetProt"
+author: "Wilson Wen Bin Goh"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{NetProt}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+`NetProt` is an R package containing several methods for performing complex-based feature selection with proteomics expression data. It includes:
+
+- Feature-Selection Methods (ESSNET ^[Goh and Wong. Advancing clinical proteomics via analysis based on biological complexes: A tale of five paradigms. Journal of Proteome Research, 15:9, July 2016], PFSNET ^[Goh and Wong. Evaluating feature-selection stability in next-generation proteomics. Journal of Bioinformatics and Computational Biology, 14(5):16500293, October 2016.], QPSP ^[Goh et al. Quantitative proteomics signature profiling based on network contextualization. Biology Direct, 10:71, December 2015.], GSEA, etc)
+
+- Pseudo-data and pseudo-complex generation methods
+
+NetProt is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+## Getting started
+###Dependencies
+NetProt methods are compatible with functions from the following packages: "vioplot", "genefilter", "limma", "e1071", "pvclust". 
+
+###Protein complex data
+First we need to find some network information to act as the feature vector (also referred to as the complex vector). NetProt works well with real protein complexes and this data can be readily obtained from CORUM (http://mips.helmholtz-muenchen.de/genre/proj/corum/).
+
+An example CORUM dataset is also available here (https://drive.google.com/open?id=0BxBcRNJvgbEPaTBJNEN1WU02MTA). To use the example complex dataset with 'NetProt', convert it into an R list object using the following commands: 
+
+    library(NetProt)
+    cmplx <- read.table("human_complexes.txt", sep="\t", header=FALSE)
+    cv <- strsplit(as.vector(cmplx[,4]), ',')
+    cv <- setNames(cv, cmplx[,1]) #assigns the complex ID as the name
+    
+The above example should work with current CORUM data files as well.
+
+Alternatively, the example complex vector in the google drive can also be called directly using the data command:
+
+    data("cv")
+
+Finally, NetProt can also use as its feature set a list of predicted network clusters or pathways. But note that the required format is that of an R list object where each element in the list is named by the complex name or id, and that the constituent components (proteins) are stored as a vector within each list element. 
+
+###Reference proteomics datasets
+Several high quality proteomics expression datasets are provided within this package: The renal control dataset (RCC) is a test expression comprising 12 control samples ^[Guo et al. Rapid mass spectrometric conversion of tissue biopsy samples into permanent quantitative digital proteome maps. Nature Medicine, 21:4, April 2015.]. The renal cancer dataset (RC) comprises 12 normal and 12 cancer samples. 
+
+RCC comprises 12 SWATH runs originating from a human kidney test tissue digested in quadruplicates (x4) and each digest analyzed in triplicates (x3) using a tripleTOF 5600 mass spectrometer (AB Sciex).
+2,331 proteins are quantified across the 12 SWATH maps with a peptide and protein false-discovery rate (FDR) of 1%. Since just one true sample class exists, RCC may be used for false-positive rate evaluation. RC comprises 24 SWATH runs originating from six pairs of non-tumorous and tumorous clear-cell renal carcinoma (ccRCC) tissues, in duplicates.
+
+The TCGA colorectal cancer (RC) comprises 30 normal and 90 cancer samples ^[Zhang et al. Proteogenomic characterization of human colon and rectal cancer. Nature, 5:13, September 2014.]. To ensure data quality: For every 5 CR samples, benchmark quality controls (QCs) from one basal and one luminal human breast tumor xenograft are analyzed. Both standard search (Myrimatch v2.1.87) and spectral search (Pepitome) were used. Peptide identification stringency is set at FDR of 2% for higher sensitivity. For protein assembly, a minimum of 2 unique peptides per protein is essential for a positive identification (3,899 proteins with a protein-level FDR of 0.43%). To limit data holes, only proteins supported by 95% of samples are kept (3,609 proteins). 
+
+Proteins are quantified via spectral count, which is the total number of MS/MS spectra acquired for peptides from a given protein. 
+
+Datasets may be called by their names (in brackets). For example, to call the RC dataset, which we will be using in the following examples, having loaded the NetProt package, do:
+
+    data("RC")
+    
+###Simulated proteomics datasets
+Simulated datasets are provided at https://drive.google.com/open?id=0BxBcRNJvgbEPaTBJNEN1WU02MTA  (For more details, refer to the NetProt publication).
+
+D1.2 and D2.2 are from the publication of Langley and Mayr ^[Langley and Mayr. Comparative analysis of statistical methods used for detecting differential expression in label-free mass spectrometry proteomics. J Proteomics, 129, 83-92, July 2015.]. D.1.2 is from LC-MS/MS study of proteomic changes resulting from addition of exogenous matrix metallo-peptidase (3 control, 3 test). D2.2 is from a study of hibernating arctic squirrels (4 control, 4 test). Quantitation in both studies is based on spectral counts.
+Both D1.2 and D2.2 comprise 100 simulated datasets with 20% randomly generated significant features. For D1.2 and D2.2, this corresponds to 177 and 710 significant proteins respectively. The effect sizes of these 20% differential features are sampled from five possibilities or p (20%, 50%, 80%, 100% and 200%), increased in only one class and not in the other.
+
+DRCC is generated from RCC in the same manner as D1.2/D2.2 with the first 6 samples in class A, and the remainder in class B.
+
+###Using your own data
+Unless a class factor needs to be specified in the arguments (e.g. in HE and GSEA), all other methods will auto assign the classes based on the column names. For example, the prefix e.g ("N_" or "Normal_"), separated by an underscore, will be used as the class N or Normal. It is essential that all samples have a standardized prefix for this purpose.
+
+###Defining phenotypic classes for use with RC (generating a class factor)
+The expression below generates a vector "class" with two characters, A and B, corresponding to the class types. In this case, the first 12 samples are designated class A, while the next 12 are class B. Note that the order must correspond exactly to the order of the classes in the actual dataset. To convert a vector into a factor object, use the as.factor command:
+
+    class <- rep("A", 12) #class A
+    class <- append(class, rep("B", 12)) #class B
+    class <- as.factor(class)
+
+##Feature-Selection Methods
+
+### ESSNET
+Extremely Small SubNET (ESSNET) works by testing the distribution of paired class differences on a given set of subnets or complexes. It uses two functions --- `internal_substraction` and `essnet`. 
+
+`internal_substraction` creates a vector of deltas (differences) for each protein in the expression matrix, i.e., generates a series of deltas by subtracting the expression scores of every sample in class A against a sample in class B. It takes the following as arguments:
+
+      internal_substraction(a, b)
+where a are samples from class A and b are samples from class B. Returns a matrix of deltas.
+
+
+Having produced the delta vector, we may perform a one-sample t-test following contextualization against a list of protein complexes using the `essnet` function.  
+
+      essnet(x, y, z)
+where x is the delta matrix, y is the list of complexes and z is the minimal overlap between proteomics data and the complex.
+
+Using RC and cv, we may assemble the ESSNET method as follows:
+
+      sm <- internal_substraction(RC[,class==A],RC[,class==B])
+      essnet_005 <- essnet(sm,cv,5)
+      essnet_005 <= 0.05 #significant features
+
+Here, we split RC into its two respective classes A and B, and input it as arguments to `internal_substraction`. For `essnet`, we imposed a minimum overlap of 5 proteins in the protein expression matrix with a complex (if it is to be considered). The output is as a vector essnet_005, which contains the ESSNET p-values and the names of the corresponding complexes. To produce a list of significant complexes, simply filter by a statistical threshold, e.g. 0.05.  
+
+### SNET
+SNET, FSNET, PFSNET and PPFSNET belong to the Rank-Based Network Analysis (RBNA) class of methods. RBNA incorporates rank-weights onto measured proteins based on their individual sample ranks, and class-weights based on the proportion of supporting information amongst samples.
+
+There are subtle differences between SNET, FSNET, PFSNET and PPFSNET. They all deploy an initial data-processing step (except for SNET, which uses a simplified form of GFS, the others all use GFS). A defining characteristic of RBNAs is that it defines a class-representation proportion (class weighting) per gene, given the rationale that a top-ranking gene frequently observed in the top n% of samples in its respective class is more likely a true positive. Both SNET and FSNET use the same one-sided reciprocal statistical test but differ in the upstream data transformation. PFSNET uses GFS upstream, but differs from FSNET by swapping the one-sided test in favour of a single-sample test. PFSNET uses unpaired tests and has reduced power if samples are pairable (e.g. the normal and disease tissues are derived from the same individual), PPFSNET addresses this shortfall by replacing the unpaired tests in PFSNET with the paired version.
+
+We begin with how to chain functions together to create SNET. SNET uses the following functions: `gnfs`,`subset_weights`,`standard_t_test`. `gnfs` is a simplification of GFS, and discretizes data such that the top 20% takes on a value of 1, and the bottom 80%, 0. `subset_weights` applies a class-based weight refinement based on the degree of supporting evidence from other samples of the same class. `standard_t_test` performs reciprocal tests based on the output from `subset_weights`.
+
+
+Using RC and cv, we may assemble the SNET method as follows:
+
+      snet_wm <- apply(RC, 2, gnfs)
+      snet_wm  <- subset_weights(snet_wm)
+      snet_m <- fsnet(snet_wm, cv,3)
+      standard_t_test(snet_m, 0.05) #significant features
+
+In the example above, `gnfs` is applied per column (sample) on the data matrix, followed by class-based weight adjustments. The fsnet function is a scoring function, and relates the weighted output from `subset_weights` to the complex vector cv, with a minimum of size 3 complexes being considered for analysis. Finally, the `standard_t_test` takes two arguments, the output from fsnet, and a statistical threshold.
+
+### FSNET
+FSNET differs from SNET only in that it uses `gfs` for data processing. 
+Uses the following functions: `gfs`,`subset_weights`,`fsnet`,`standard_t_test`
+
+An implementation of FSNET is as follows:
+
+      wm <- apply(RC, 2, gfs)
+      wm <- subset_weights(wm) 
+      fs_m <- fsnet(wm, cv, 3) 
+      standard_t_test(fs_m, 0.05) #significant features
+      
+With the exception of the first line where we ran GFS on per sample in the data matrix. The remaining steps are the same as SNET.
+
+### PFSNET
+PFSNET differs from FSNET in that it uses a one-sample t-test based instead of reciprocal one-sided tests. This is achieved via the function `pfsnet_theoretical_t_test`, which performs the one-sample testing. 
+PFSNET uses the following functions: `gfs`,`subset_weights`,`fsnet`,`pfsnet_theoretical_t_test`.
+
+
+Using the RC example, its implementation is as follows:
+
+      wm <- apply(RC, 2, gfs)
+      wm <- subset_weights(wm)
+      fs_m <- fsnet(wm, cv, 3)
+      pfsnet_theoretical_t_test(fs_m, 0.05) #significant features
+      
+Similar to the `standard_t_test` function, `pfsnet_theoretical_t_test` takes the output from the fsnet function as its first argument, and a statistical threshold in its second argument.
+
+### PPFSNET
+PFSNET uses an unpaired test, which may lose power when samples are pairable (e.g. if both normal and cancer tissue arise from the same patient). Hence, we defined a paired t-test using the function `ppfsnet_theoretical_t_test`.
+
+PPFSNET the following functions: `gfs`,`subset_weights`,`fsnet`,`ppfsnet_theoretical_t_test`.
+
+An implementation of PPFSNET is as follows:
+
+      wm <- apply(RC, 2, gfs)
+      wm <- subset_weights(wm)
+      fs_m <- fsnet(wm, cv, 3) #generate the fsnet matrix here
+      ppfsnet_theoretical_t_test(fs_m, 0.05) #significant features
+
+The data matrix should be arranged such that the first member of class A and class B correspond to the same origin, e.g. patient or tissue. As with `pfsnet_theoretical_t_test`, `ppfsnet_theoretical_t_test` takes its first argument as the output from fsnet, and the second argument is a statistical threshold. 
+
+### QPSP
+QPSP's defining characteristic involves calculation of overlaps (or hit-rates) amongst detected proteins against a vector of complexes to generate a hit-rate vector, which is used for class discrimination and feature selection.
+
+QPSP uses the following functions: `gfs`, `qpsp`. `qpsp` takes the GFS converted data matrix, compares it against a complex vector, and outputs a matrix of complex scores against samples at a significance level of 0.05. 
+
+Implementation:
+
+      wm <- apply(RC, 2, gfs)
+      qpsp(wm, cv)
+
+
+### PSP
+PSP's is suitable for use with dataset with high numbers of data holes (or missing values). Unlike QPSP, which uses GFS to clean the data matrix, PSP uses the binarize_mat function to binarize the data matrix first, before calculation of overlaps (or hit-rates) amongst detected proteins against a vector of complexes to generate a hit-rate vector, which is used for class discrimination and feature selection.
+
+Uses the following functions: `binarize_mat`, `qpsp`
+
+Implementation:
+      
+      wm <- apply(RC, 2, binarize_mat)
+      qpsp(wm, cv)
+
+Note that PSP will not work with a fully populated data matrix such as RC but with older datasets where data holes are abundant. The above code is purely for example purposes. For further details, please refer to Goh et al ^[Goh et al. Proteomics signature profiling (PSP): a novel contextualization approach for cancer proteomics. Journal of Proteome Research, 11:3, Sep 2012]. 
+
+### GSEA (Gene Set Enrichment Analysis)
+The version of GSEA here is the original one which works by first ranking all proteins based on t-statistic. This is followed by the Kolmogorov-Smirnov (KS) test to check whether the ranks of proteins in the reference complex and the ranks of proteins outside the reference complex come from the same distribution. The significance of the KS test statistic is evaluated against a null distribution obtained by permuting phenotype class labels.
+
+Uses the function: `gsea`
+
+      gsea(a, b, c)
+      
+where a is the data, b is the complex vector, and c is the class factor.
+
+For example, using RC and the CORUM complex vector, cv:
+
+      GSEA <- gsea(RC, cv, class)
+      
+From the above, we will obtain a list of p-values (stored in GSEA). To find out the names of the complexes which are significant, we use the name vector of cv, and introduce a p-value cutoff at 0.05 (example below).
+
+      names(cv)[which(GSEA <= 0.05)]
+
+### HE (Hypergeometric Enrichment)
+The Hypergeometric Enrichment (HE) pipeline is the most known instance of Over-Representation Analysis (ORA). HE involves two steps: Differential-protein selection via the two-sample t-test followed by a test for significance of overlap with some reference protein complex via the hypergeometric test.
+
+The version here simply uses one function, `he` to do this where the arguments are:
+
+      he(a, b, c)
+      
+where a is the protein expression data, b is the complex vector, and c is the class factor
+
+Using the colorectal cancer data, CR this time, the complex vector cv, and CR's own class factor, we may simply execute HE as:
+
+      orah <- he(CR, cv, as.factor(c(rep("A", 30), rep("B", 90))))
+      names(cv)[which(orah <= 0.05)]
+
+##Pseudo-data and pseudo-complex generation methods
+Simulated proteomics expression data with predefined differential features.
+      
+      generate_proteomics_sim(a, b, c, d, e)
+
+where a is data, b are factors, c is the proportion of features to be defined as differential features, d is the number of simulated datasets, and e is a vector of effect sizes.
+
+For example:
+
+      factors <- as.factor(c(rep(0,6), rep(1,6)))
+      es <- c(0.2, 0.5, 0.8, 1, 2)
+      generate_proteomics_sim(RCC, factors, 0.2, 10, es)
+
+Pseudo-complex generator generates 50 random significant complexes, and 50 random non-significant complexes given a preassigned level of purity (the proportion of differential proteins in a complex). Uses the function:
+`generate_pseudo_cplx()`.
+      
+      generate_pseudo_cplx(a, b, c)
+
+where a is a simulated data matrix from generate_proteomics_sim(), b are the factors,and c is the purity (between 0 to 1).
+
